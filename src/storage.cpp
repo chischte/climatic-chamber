@@ -280,3 +280,59 @@ void storage_save_now() {
     saveDataToRingBuffer();
   }
 }
+
+// CO2 Setpoint management (stored in values[1])
+void storage_set_co2_setpoint(uint16_t ppm) {
+  // Clamp to valid range: 400-10000 ppm
+  if (ppm < 400) ppm = 400;
+  if (ppm > 10000) ppm = 10000;
+  storage_set_value(1, ppm);
+}
+
+uint16_t storage_get_co2_setpoint() {
+  uint16_t setpoint = g_values[1];
+  // Default to 800 ppm if not set or out of range
+  if (setpoint < 400 || setpoint > 10000) {
+    setpoint = 800;
+    storage_set_co2_setpoint(setpoint);
+  }
+  return setpoint;
+}
+
+// RH Setpoint management (stored in values[2], scaled by 10)
+void storage_set_rh_setpoint(float percent) {
+  // Clamp to valid range: 82-96%
+  if (percent < 82.0f) percent = 82.0f;
+  if (percent > 96.0f) percent = 96.0f;
+  uint16_t scaled = (uint16_t)(percent * 10.0f); // 89.0 -> 890
+  storage_set_value(2, scaled);
+}
+
+float storage_get_rh_setpoint() {
+  uint16_t scaled = g_values[2];
+  // Default to 89.0% if not set
+  if (scaled < 820 || scaled > 960) {
+    scaled = 890; // 89.0%
+    storage_set_value(2, scaled);
+  }
+  return scaled / 10.0f;
+}
+
+// Temperature Setpoint management (stored in values[3], scaled by 10)
+void storage_set_temp_setpoint(float celsius) {
+  // Clamp to valid range: 18-32°C
+  if (celsius < 18.0f) celsius = 18.0f;
+  if (celsius > 32.0f) celsius = 32.0f;
+  uint16_t scaled = (uint16_t)(celsius * 10.0f); // 25.0 -> 250
+  storage_set_value(3, scaled);
+}
+
+float storage_get_temp_setpoint() {
+  uint16_t scaled = g_values[3];
+  // Default to 25.0°C if not set
+  if (scaled < 180 || scaled > 320) {
+    scaled = 250; // 25.0°C
+    storage_set_value(3, scaled);
+  }
+  return scaled / 10.0f;
+}

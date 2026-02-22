@@ -42,3 +42,15 @@ void storage_set_value(uint8_t index, uint16_t value);
 
 // Force immediate save (normally called automatically by storage_tick)
 void storage_save_now();
+
+// CO2 Setpoint management (stored in values[1])
+void storage_set_co2_setpoint(uint16_t ppm);
+uint16_t storage_get_co2_setpoint();
+
+// RH Setpoint management (stored in values[2], scaled by 10: 940 = 94.0%)
+void storage_set_rh_setpoint(float percent);
+float storage_get_rh_setpoint();
+
+// Temperature Setpoint management (stored in values[3], scaled by 10: 250 = 25.0°C)
+void storage_set_temp_setpoint(float celsius);
+float storage_get_temp_setpoint();

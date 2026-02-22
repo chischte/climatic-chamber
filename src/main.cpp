@@ -8,6 +8,7 @@
  * *****************************************************************************
  */
 
+#include "controller.h"
 #include "credentials.h"
 #include "storage.h"
 #include "web_server.h"
@@ -36,6 +37,9 @@ void setup() {
   storage_init();
   storage_load();
   
+  // Initialize climate chamber controller
+  controller_init();
+  
   // Configure web server
   g_webConfig = {wifi_get_server(), storage_get_values_mutable(), 
                  storage_get_num_values(), onIncrement};
@@ -48,6 +52,7 @@ void setup() {
 // ==================== END SETUP ====================
 
 void loop() {
+  controller_tick();  // Climate chamber control
   wifi_tick();
   web_server_handle(&g_webConfig);
   storage_tick();

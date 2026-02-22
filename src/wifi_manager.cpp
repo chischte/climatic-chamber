@@ -5,6 +5,8 @@ static WiFiServer g_server(WIFI_SERVER_PORT);
 static bool g_ipPrinted = false;
 static int g_lastStatus = -1;
 static unsigned long g_lastHeartbeatMs = 0;
+static unsigned long g_lastRssiPrintMs = 0;
+static const unsigned long RSSI_PRINT_INTERVAL_MS = 5000; // 5 seconds
 
 static const char *wifiStatusToString(int s) {
   switch (s) {
@@ -96,6 +98,10 @@ void wifi_init(const char *ssid, const char *pass) {
       Serial.println();
       Serial.print("Connected! IP: ");
       Serial.println(WiFi.localIP());
+      Serial.print("WiFi RSSI: ");
+      Serial.print(WiFi.RSSI());
+      Serial.println(" dBm");
+      g_lastRssiPrintMs = millis(); // Initialize RSSI timer
       g_server.begin();
       return;
     }
@@ -144,6 +150,14 @@ void wifi_tick() {
       Serial.print("IP: ");
       Serial.println(WiFi.localIP());
       g_ipPrinted = true;
+    }
+    
+    // Print RSSI every 5 seconds
+    if ((now - g_lastRssiPrintMs) >= RSSI_PRINT_INTERVAL_MS) {
+      g_lastRssiPrintMs = now;
+      Serial.print("WiFi RSSI: ");
+      Serial.print(WiFi.RSSI());
+      Serial.println(" dBm");
     }
   } else {
     g_ipPrinted = false;
