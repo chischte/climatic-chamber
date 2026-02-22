@@ -1,69 +1,154 @@
 /*
  * *****************************************************************************
- * CLIMATE CHAMBER CONTROLLER
+ * CLIMATE CHAMBER CONTROLLER - PUBLIC API
  * *****************************************************************************
- * Non-blocking control system with simulated sensors (10x speedup for testing)
- * - Ring buffers for last 200 samples (RH, Temp, CO2)
+ * Non-blocking climate control system with:
+ * - Multi-sensor monitoring (CO2, humidity, temperature)
+ * - Ring buffer data collection (200 samples per sensor)
  * - Non-preemptive action state machine
- * - Measurement cycle with swirl/median/evaluate/wait stages
+ * - Measurement cycle with median filtering
+ * - Independent heater control
+ * 
+ * Configuration:
+ * - SIMULATE_SENSORS: Use simulated sensors (defined in config.h)
+ * - SPEEDUP_FACTOR: Time acceleration for testing
+ * 
+ * Control Loop:
+ * - Reads sensors continuously
+ * - Calculates median values for decision-making
+ * - Executes control actions (fogger, fresh air, heater)
+ * - Stores data in ring buffers for web visualization
  * *****************************************************************************
  */
 
 #pragma once
 
-#include <Arduino.h>
+#include "config.h"
 #include <stdint.h>
 
-// --- Configuration ---
-#define SIMULATE_SENSORS 1  // 1 = simulated sensors, 0 = real sensors
+// =============================================================================
+// DATA STRUCTURES
+// =============================================================================
 
-static constexpr uint8_t SPEEDUP = 10;  // 10x faster than real-time for testing
-
-// Ring buffer size
-static constexpr uint16_t RING_BUFFER_SIZE = 200;
-
-// --- Data structures ---
-
-// Sensor readings
+/**
+ * @brief Sensor readings from all sensors
+ * 
+ * Contains readings from 7 sensors:
+ * - 2 CO2 sensors (main + secondary)
+ * - 2 humidity sensors (main + secondary)  
+ * - 3 temperature sensors (main + secondary + outer)
+ */
 struct Sensors {
-  int co2;         // ppm (main)
-  int co2_2;       // ppm (second sensor)
-  float rh;        // % relative humidity (main)
-  float rh_2;      // % relative humidity (second sensor)
-  float temp;      // °C temperature (main)
-  float temp_2;    // °C temperature (second sensor)
-  float temp_outer;// °C temperature (outer box)
+  int co2;           ///< CO2 concentration (ppm) from main sensor
+  int co2_2;         ///< CO2 concentration (ppm) from secondary sensor
+  float rh;          ///< Relative humidity (%) from main sensor
+  float rh_2;        ///< Relative humidity (%) from secondary sensor
+  float temp;        ///< Temperature (°C) from main inner sensor
+  float temp_2;      ///< Temperature (°C) from secondary inner sensor
+  float temp_outer;  ///< Temperature (°C) from outer box sensor
 };
 
-// --- API Functions ---
+// =============================================================================
+// CONTROLLER API
+// =============================================================================
 
-// Initialize controller (call once in setup)
+/**
+ * @brief Initialize the climate controller
+ * 
+ * Must be called once during setup before any other controller functions.
+ * Initializes sensors, actuators, and internal state machines.
+ */
 void controller_init();
 
-// Periodic tick (call in loop)
+/**
+ * @brief Execute one iteration of the control loop
+ * 
+ * Call this repeatedly in the main loop. Performs non-blocking operations:
+ * - Reads sensors
+ * - Updates ring buffers
+ * - Executes control decisions
+ * - Manages actuator states
+ */
 void controller_tick();
 
-// Get last 100 samples for API/plotting
-// Arrays must have space for 100 elements
+// =============================================================================
+// DATA RETRIEVAL
+// =============================================================================
+
+/**
+ * @brief Get last 200 samples from primary sensors
+ * 
+ * @param rh_out    Output array for humidity data (must have 200 elements)
+ * @param temp_out  Output array for temperature data (must have 200 elements)
+ * @param co2_out   Output array for CO2 data (must have 200 elements)
+ * 
+ * @note Returns data oldest to newest. If buffer not full, pads with zeros.
+ */
 void controller_get_last200(float *rh_out, float *temp_out, int *co2_out);
 
-// Get additional sensors (CO2_2, RH_2, temp_2, temp_outer)
-void controller_get_additional_sensors(int *co2_2_out, float *rh_2_out, float *temp_2_out, float *temp_outer_out);
+/**
+ * @brief Get last 200 samples from additional sensors
+ * 
+ * @param co2_2_out      Output array for secondary CO2 (200 elements)
+ * @param rh_2_out       Output array for secondary humidity (200 elements)
+ * @param temp_2_out     Output array for secondary temperature (200 elements)
+ * @param temp_outer_out Output array for outer temperature (200 elements)
+ */
+void controller_get_additional_sensors(int *co2_2_out, float *rh_2_out, 
+                                       float *temp_2_out, float *temp_outer_out);
 
-// Get last 100 output states (0=OFF, 1=ON)
+/**
+ * @brief Get last 200 output states for primary actuators
+ * 
+ * @param fogger_out    Output array for fogger states (0=OFF, 1=ON)
+ * @param swirler_out   Output array for swirler states (0=OFF, 1=ON)
+ * @param freshair_out  Output array for fresh air states (0=OFF, 1=ON)
+ */
 void controller_get_outputs(int *fogger_out, int *swirler_out, int *freshair_out);
 
-// Get last 100 heater states (0=OFF, 1=ON)
+/**
+ * @brief Get last 200 heater states
+ * 
+ * @param heater_out Output array for heater states (0=OFF, 1=ON)
+ */
 void controller_get_heater(int *heater_out);
 
-// CO2 Setpoint management
+// =============================================================================
+// SETPOINT MANAGEMENT
+// =============================================================================
+
+/**
+ * @brief Set CO2 target level
+ * @param ppm Target CO2 concentration (400-10000 ppm)
+ */
 void controller_set_co2_setpoint(uint16_t ppm);
+
+/**
+ * @brief Get current CO2 setpoint
+ * @return Target CO2 concentration in ppm
+ */
 uint16_t controller_get_co2_setpoint();
 
-// RH Setpoint management
+/**
+ * @brief Set humidity target level
+ * @param percent Target relative humidity (82-96 %)
+ */
 void controller_set_rh_setpoint(float percent);
+
+/**
+ * @brief Get current humidity setpoint
+ * @return Target relative humidity in percent
+ */
 float controller_get_rh_setpoint();
 
-// Temperature Setpoint management
+/**
+ * @brief Set temperature target level
+ * @param celsius Target temperature (18-32 °C)
+ */
 void controller_set_temp_setpoint(float celsius);
+
+/**
+ * @brief Get current temperature setpoint
+ * @return Target temperature in degrees Celsius
+ */
 float controller_get_temp_setpoint();
