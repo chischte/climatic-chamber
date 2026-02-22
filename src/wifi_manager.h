@@ -3,22 +3,18 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
-typedef struct {
-    const char *ssid;
-    const char *pass;
-    int max_retries;
-    unsigned long attempt_timeout_ms;
-    unsigned long retry_delay_ms;
-    unsigned long heartbeat_ms;
-    WiFiServer *server;
-} WifiConfig;
+// WiFi Configuration Constants
+static constexpr uint16_t WIFI_SERVER_PORT = 80;
+static constexpr int WIFI_MAX_RETRIES = 3;
+static constexpr unsigned long WIFI_ATTEMPT_TIMEOUT_MS = 20000UL;
+static constexpr unsigned long WIFI_RETRY_DELAY_MS = 2000UL;
+static constexpr unsigned long WIFI_HEARTBEAT_MS = 30000UL;
 
-typedef struct {
-    bool ip_printed;
-    int last_status;
-    unsigned long last_heartbeat_ms;
-} WifiState;
+// Initialize WiFi and server (call once in setup)
+void wifi_init(const char *ssid, const char *pass);
 
-void wifi_connect(const WifiConfig *config);
+// Periodic tick for WiFi status monitoring (call in loop)
+void wifi_tick();
 
-void wifi_serial_ticker(const WifiConfig *config, WifiState *state);
+// Get server instance for web server module
+WiFiServer* wifi_get_server();

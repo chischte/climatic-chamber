@@ -8,6 +8,11 @@
 extern "C" {
 #endif
 
+// Ring Buffer Configuration
+static constexpr uint32_t RING_BUFFER_NUM_SLOTS = 100;  // ~270 days of daily storage
+static constexpr uint32_t RING_BUFFER_SLOT_SIZE = 64;   // 64 bytes per slot
+static constexpr uint32_t RING_BUFFER_TOTAL_SIZE = RING_BUFFER_NUM_SLOTS * RING_BUFFER_SLOT_SIZE;
+
 // Storage Model
 // - Fixed-size ring buffer carved from the tail of QSPI/FlashIAP when available;
 //   otherwise the app falls back to RAM.
