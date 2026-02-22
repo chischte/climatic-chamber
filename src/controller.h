@@ -20,15 +20,19 @@
 static constexpr uint8_t SPEEDUP = 10;  // 10x faster than real-time for testing
 
 // Ring buffer size
-static constexpr uint16_t RING_BUFFER_SIZE = 100;
+static constexpr uint16_t RING_BUFFER_SIZE = 200;
 
 // --- Data structures ---
 
 // Sensor readings
 struct Sensors {
-  int co2;      // ppm
-  float rh;     // % relative humidity
-  float temp;   // °C temperature
+  int co2;         // ppm (main)
+  int co2_2;       // ppm (second sensor)
+  float rh;        // % relative humidity (main)
+  float rh_2;      // % relative humidity (second sensor)
+  float temp;      // °C temperature (main)
+  float temp_2;    // °C temperature (second sensor)
+  float temp_outer;// °C temperature (outer box)
 };
 
 // --- API Functions ---
@@ -42,6 +46,15 @@ void controller_tick();
 // Get last 100 samples for API/plotting
 // Arrays must have space for 100 elements
 void controller_get_last200(float *rh_out, float *temp_out, int *co2_out);
+
+// Get additional sensors (CO2_2, RH_2, temp_2, temp_outer)
+void controller_get_additional_sensors(int *co2_2_out, float *rh_2_out, float *temp_2_out, float *temp_outer_out);
+
+// Get last 100 output states (0=OFF, 1=ON)
+void controller_get_outputs(int *fogger_out, int *swirler_out, int *freshair_out);
+
+// Get last 100 heater states (0=OFF, 1=ON)
+void controller_get_heater(int *heater_out);
 
 // CO2 Setpoint management
 void controller_set_co2_setpoint(uint16_t ppm);
