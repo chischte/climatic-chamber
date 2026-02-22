@@ -4,31 +4,102 @@ Closed-loop-Steuerung von Temperatur, relativer Luftfeuchtigkeit und CO₂-Gehal
 
 ## 📋 Übersicht
 
-Dieses Projekt implementiert ein Steuerungssystem für eine Klimakammer mit folgenden Funktionen:
+Dieses Projekt implementiert ein vollständiges Steuerungssystem für eine Klimakammer mit:
 
-- **WiFi-Konnektivität**: Automatische Verbindung mit konfigurierbarem WLAN
-- **Web-Interface**: HTTP-Server mit REST-API und Web-GUI
-- **Persistente Datenspeicherung**: Ring-Buffer mit Flash/RAM-Speicherung und Wear-Leveling
-- **Modulare Architektur**: Saubere Trennung von WiFi, Storage und Web-Server-Logik
+- **🎯 Automatische Klimaregelung**: Non-preemptive Steuerung von RH, CO₂ und Temperatur
+- **📊 Echtzeit-Monitoring**: Web-Dashboard mit Chart.js (3 Live-Diagramme)
+- **🔬 Simulierte Sensoren**: 10x Speedup für schnelles Testing
+- **🔄 Mess-Zyklus**: Swirl → Median-Sampling → Evaluate → Wait
+- **💾 Ring-Buffer**: 200 Samples pro Signal (RH, Temp, CO2)
+- **📡 WiFi & Web-API**: REST-API und Web-Interface
+- **💿 Persistente Speicherung**: Flash/RAM-basiert mit Wear-Leveling
+
+## 🎯 Hauptfunktionen
+
+### Klimaregelung
+
+Das System führt **prioritätsbasierte, non-preemptive Aktionen** aus:
+
+1. **CO₂-Reduktion** (Priorität 1): Bei CO₂ > 1100 ppm
+   - 10s Umwälzer (Swirler) + 20s Settle
+   
+2. **RH-Reduktion** (Priorität 2): Bei RH > 98%
+   - 10s Frischluft + 10s Umwälzer + 20s Settle
+   - Nach Aktion: RH_UP für 3 Minuten gesperrt
+   
+3. **RH-Erhöhung** (Priorität 3): Bei RH < 94%
+   - 5s Nebler + 10s Mix (alle Outputs) + 120s Settle
+   - Nach Aktion: RH_DOWN für 3 Minuten gesperrt
+   
+4. **Baseline-Lüftung** (Priorität 4): Wenn 10 Minuten keine Belüftung
+   - 10s Frischluft + 10s Settle
+
+⚠️ **Wichtig**: Laufende Aktionen werden NIE abgebrochen (non-preemptive)!
+
+### Mess-Zyklus
+
+```
+MEASURE_SWIRL (5s) → MEASURE_MEDIAN (10 Samples) → EVALUATE → WAIT (60s) → ⟳
+```
+
+- **Swirl**: Umwälzer für gleichmäßige Durchmischung
+- **Median**: 10 Messungen über 5s, Median-Filter gegen Ausreißer
+- **Evaluate**: Controller entscheidet über nötige Aktion
+- **Wait**: Wartezeit bis zum nächsten Zyklus
+
+### Simulierte Sensoren (10x Speedup)
+
+Für schnelles Testing läuft das System **10x schneller als Echtzeit**:
+- Sampling: 100ms statt 1000ms
+- Alle Aktionen/Wartezeiten durch 10 geteilt
+- Realistische Random-Walk-Simulation:
+  - **RH**: 85-99.5% mit Drift
+  - **Temperatur**: 18-35°C mit Drift
+  - **CO₂**: 450-3000 ppm mit gelegentlichen Spitzen
 
 ## 🔧 Hardware
 
 - **Plattform**: Arduino Portenta H7 (M7 Core)
 - **Board**: Portenta Machine Control
 - **MCU**: STM32H747XIH6 @ 480MHz
-- **RAM**: 511 KB
-- **Flash**: 768 KB
+- **RAM**: 511 KB (16.8% verwendet)
+- **Flash**: 768 KB (40.5% verwendet)
+
+### Hardware-Anschlüsse (TODO)
+
+Die IO-Wrapper-Funktionen müssen noch an die tatsächliche Hardware angepasst werden:
+
+```cpp
+// In controller.cpp, Zeilen ~302-318
+static void setSwirler(bool on) {
+  // TODO: Hardware-Pin für Umwälzer setzen
+}
+
+static void setFreshAir(bool on) {
+  // TODO: Hardware-Pin für Frischluft-Ventil setzen
+}
+
+static void setFogger(bool on) {
+  // TODO: Hardware-Pin für Nebler setzen
+}
+```
 
 ## 📁 Projektstruktur
 
 ```
 src/
-├── main.cpp                 # Hauptprogramm (~59 Zeilen, nur High-Level-Logik)
+├── main.cpp                 # Hauptprogramm (~60 Zeilen)
+├── controller.h/cpp         # Klimakammer-Steuerung (650 Zeilen)
+│   ├── SimSensor            # Simulierte Sensoren
+│   ├── SensorRingBuffer     # 200-Sample Ring-Buffer
+│   ├── Measurement SM       # Mess-Zyklus State Machine
+│   ├── Action SM            # Non-preemptive Aktionen
+│   └── Controller Logic     # Prioritätsbasierte Steuerung
 ├── credentials.h            # WiFi-Zugangsdaten (nicht in Git)
 ├── credentials.h.template   # Template für Zugangsdaten
 ├── wifi_manager.h/cpp       # WiFi-Verbindungsverwaltung
-├── storage.h/cpp            # Datenpersistenz mit Ring-Buffer
-├── web_server.h/cpp         # HTTP-Server und REST-API
+├── storage.h/cpp            # Persistente Datenspeicherung
+├── web_server.h/cpp         # HTTP-Server, REST-API, Web-UI
 └── flash_ringbuffer.h/cpp   # Low-Level Flash/RAM Ring-Buffer
 
 lib/
@@ -77,6 +148,95 @@ platformio device monitor
 ```
 
 ## 📚 Module
+
+### Controller (`controller.h/cpp`)
+
+**Hauptsteuerung der Klimakammer** - vollständig non-blocking und non-preemptive.
+
+**Konfiguration** (in `controller.h/cpp`):
+```cpp
+#define SIMULATE_SENSORS 1              // 1 = Simulation, 0 = echte Sensoren
+static constexpr uint8_t SPEEDUP = 10;  // Speedup-Faktor (10 = 10x schneller)
+
+// Schwellwerte
+static constexpr int CO2_THRESHOLD = 1100;        // ppm
+static constexpr float RH_HIGH_THRESHOLD = 98.0f; // %
+static constexpr float RH_LOW_THRESHOLD = 94.0f;  // %
+```
+
+**API:**
+```cpp
+controller_init();                          // Initialisierung (in setup())
+controller_tick();                          // Periodischer Tick (in loop())
+controller_get_last200(rh, temp, co2);     // Letzte 200 Samples abrufen
+```
+
+**Features:**
+- ✅ Vollständig non-blocking (nur millis(), kein delay())
+- ✅ Non-preemptive Actions (laufende Aktionen nie abbrechen)
+- ✅ Drift-free Scheduling (nextMs += period)
+- ✅ Median-Filter (10 Samples) gegen Ausreißer
+- ✅ Prioritätsbasierte Steuerung (4 Prioritätsstufen)
+- ✅ Lockout-Mechanismus (3 min nach RH-Aktionen)
+- ✅ Baseline-Lüftung (alle 10 min)
+
+**Timing (bei SPEEDUP=10):**
+- Sampling: 100ms (statt 1s)
+- Mess-Zyklus Start: alle 6s (statt 60s)
+- Median-Sampling: 500ms für 10 Samples (statt 5s)
+- Aktionen: 1-12s (statt 10-120s)
+
+### Web Server (`web_server.h/cpp`)
+
+HTTP-Server mit Web-UI und REST-API.
+
+**Endpoints:**
+
+| Endpoint | Methode | Beschreibung |
+|----------|---------|--------------|
+| `/` | GET | **Klimakammer-Dashboard** mit 3 Chart.js-Diagrammen |
+| `/api/last200` | GET | JSON-API: Letzte 200 Samples (RH, Temp, CO2) |
+| `/old` | GET | Legacy Counter-Interface |
+| `/inc` | POST | Legacy: Counter incrementieren |
+
+**API-Beispiel:**
+```bash
+# Letzte 200 Samples abrufen
+curl http://<ip-adresse>/api/last200
+
+# Response (JSON):
+{
+  "rh": [0,0,...,92.3,92.5],      # 200 Werte, oldest→newest
+  "temp": [0,0,...,24.8,25.1],    # 200 Werte
+  "co2": [0,0,...,890,905]        # 200 Werte
+}
+```
+
+**Web-UI Features:**
+- 📊 3 Echtzeit-Diagramme (RH, Temp, CO2)
+- 🔄 Auto-Refresh alle 200ms
+- 📱 Responsive Design
+- 🎨 Chart.js via CDN (keine lokalen Dateien)
+- ⚡ Keine Animationen (Performance)
+
+**Screenshot:**
+```
+┌─────────────────────────────────────────┐
+│ Climate Chamber Monitor                 │
+│ Current: RH=92.3% | Temp=25.1°C | CO2=905 ppm │
+├─────────────────────────────────────────┤
+│ ┌───────────────────────────────────┐   │
+│ │  RH (%)   Chart                   │   │
+│ └───────────────────────────────────┘   │
+│ ┌───────────────────────────────────┐   │
+│ │  Temp (°C) Chart                  │   │
+│ └───────────────────────────────────┘   │
+│ ┌───────────────────────────────────┐   │
+│ │  CO2 (ppm) Chart                  │   │
+│ └───────────────────────────────────┘   │
+└─────────────────────────────────────────┘
+```
+
 
 ### WiFi Manager (`wifi_manager.h/cpp`)
 
@@ -127,33 +287,13 @@ storage_save_now();                    // Sofort speichern (force)
 - Sequenznummern für Versionierung
 - CRC8-Checksummen
 
-### Web Server (`web_server.h/cpp`)
-
-HTTP-Server mit Web-GUI und REST-API.
-
-**Endpoints:**
-- `GET /` - HTML-Oberfläche mit Counter
-- `GET /api/values` - JSON-API: Alle Werte auslesen
-- `POST /api/increment` - JSON-API: Counter incrementieren
-
-**Beispiel API-Requests:**
-```bash
-# Werte auslesen
-curl http://<ip-adresse>/api/values
-# Response: {"values":[42,0,0,0,0,0,0,0,0,0]}
-
-# Counter incrementieren
-curl -X POST http://<ip-adresse>/api/increment
-# Response: {"values":[43,0,0,0,0,0,0,0,0,0]}
-```
-
 ## 🔒 Sicherheit
 
 - **credentials.h ist in .gitignore**: Zugangsdaten werden nicht versioniert
 - **credentials.h.template**: Enthält Platzhalter für andere Entwickler
 - Template in Git committen, echte Credentials lokal halten
 
-## 🛠️ Entwicklung
+## 🛠️ Entwicklung & Debugging
 
 ### Code-Struktur
 
@@ -161,39 +301,166 @@ Das Hauptprogramm (`main.cpp`) ist bewusst minimal gehalten:
 
 ```cpp
 void setup() {
-  storage_init();      // Speicher initialisieren
-  storage_load();      // Persistierte Daten laden
-  wifi_init(WIFI_SSID, WIFI_PASS);  // WiFi verbinden
+  storage_init();                     // Speicher initialisieren
+  storage_load();                     // Persistierte Daten laden
+  controller_init();                  // Klimakammer-Controller initialisieren
+  wifi_init(WIFI_SSID, WIFI_PASS);   // WiFi verbinden
 }
 
 void loop() {
-  wifi_tick();         // WiFi-Status überwachen
-  web_server_handle(); // HTTP-Requests bearbeiten
-  storage_tick();      // Auto-Persistierung
+  controller_tick();    // Klimakammer-Steuerung
+  wifi_tick();          // WiFi-Status überwachen
+  web_server_handle();  // HTTP-Requests bearbeiten
+  storage_tick();       // Auto-Persistierung
 }
 ```
 
 Alle Implementierungsdetails sind in separate, fokussierte Module ausgelagert.
 
-### Debugging
+### Serial Monitor Debug-Ausgaben
 
-Serial Monitor Ausgaben (115200 baud):
-- WiFi-Verbindungsstatus
-- IP-Adresse nach erfolgreicher Verbindung
-- Storage-Operationen (Laden/Speichern)
-- Ring-Buffer-Status
+Bei 115200 baud zeigt der Serial Monitor:
+
+**WiFi & Netzwerk:**
+```
+WiFi: Connecting to mueschbache
+WiFi: WL_CONNECTED
+Connected! IP: 192.168.1.42
+```
+
+**Controller Initialisierung:**
+```
+Controller: Initializing...
+SPEEDUP: 10
+Controller: Ready
+```
+
+**Mess-Zyklus:**
+```
+Measurement: SWIRL
+Measurement: MEDIAN sampling
+  Sample 1/10: RH=92.3 Temp=24.8 CO2=890
+  Sample 2/10: RH=92.5 Temp=24.9 CO2=895
+  ...
+  Sample 10/10: RH=92.8 Temp=25.1 CO2=905
+Median: RH=92.5 Temp=24.9 CO2=900
+Measurement: WAIT
+```
+
+**Controller-Aktionen:**
+```
+Controller: CO2 high (1150 ppm) -> CO2 action
+Swirler: ON
+Action: CO2 - SWIRL
+Action: CO2 - SETTLE
+Swirler: OFF
+Action: CO2 - COMPLETE
+```
+
+**Storage-Operationen:**
+```
+Initializing Ring Buffer (6400 bytes)...
+Flash block device not available; using RAM ring buffer
+Ring Buffer initialized: 100 slots available
+Loaded data from slot 42 (seq=123, values[0]=5)
+```
+
+### Hardware-Integration
+
+Um echte Sensoren zu verwenden:
+
+1. **Sensoren aktivieren** in `controller.cpp`:
+   ```cpp
+   #define SIMULATE_SENSORS 0  // Echte Sensoren verwenden
+   ```
+
+2. **Sensor-Leselogik implementieren**:
+   ```cpp
+   static Sensors readSensors3() {
+   #if SIMULATE_SENSORS
+     return g_simSensor.read();
+   #else
+     // Ihre Sensor-Implementierung hier
+     Sensors s;
+     s.rh = MachineControl.analog_in.read(0);    // Beispiel
+     s.temp = MachineControl.temp_probes.read(0); // Beispiel
+     s.co2 = readCO2Sensor();                     // Ihre Funktion
+     return s;
+   #endif
+   }
+   ```
+
+3. **IO-Pins konfigurieren** in `controller.cpp`:
+   ```cpp
+   static void setSwirler(bool on) {
+     digitalWrite(SWIRLER_PIN, on ? HIGH : LOW);
+     Serial.print("Swirler: ");
+     Serial.println(on ? "ON" : "OFF");
+   }
+   
+   // Analog für setFreshAir() und setFogger()
+   ```
 
 ### Erweiterungen
 
-**Neue Sensordaten speichern:**
+**Schwellwerte anpassen:**
 ```cpp
-// In main.cpp
-float temperature = readTemperatureSensor();
-storage_set_value(1, (uint16_t)(temperature * 10));  // Index 1, Wert * 10 für Kommastelle
+// In controller.cpp
+static constexpr int CO2_THRESHOLD = 1200;        // Von 1100→1200
+static constexpr float RH_HIGH_THRESHOLD = 95.0f; // Von 98→95
+static constexpr float RH_LOW_THRESHOLD = 90.0f;  // Von 94→90
 ```
 
-**Neue API-Endpoints:**
-Endpoints in `web_server.cpp` erweitern und Handler implementieren.
+**Speedup ändern:**
+```cpp
+// controller.cpp oder controller.h
+static constexpr uint8_t SPEEDUP = 1;  // Real-time
+static constexpr uint8_t SPEEDUP = 5;  // 5x schneller
+static constexpr uint8_t SPEEDUP = 100; // 100x schneller (sehr schnell!)
+```
+
+**Aktionsdauern anpassen:**
+```cpp
+// In controller.cpp (Real-time-Werte, werden automatisch durch SPEEDUP geteilt)
+static constexpr unsigned long RT_CO2_SWIRL_MS = 20000;  // 20s statt 10s
+static constexpr unsigned long RT_RH_UP_SETTLE_MS = 180000; // 3min statt 2min
+```
+
+## 🧪 Testing & Inbetriebnahme
+
+### 1. Simulation testen (ohne Hardware)
+
+```bash
+# Upload code
+platformio run --target upload
+
+# Monitor öffnen
+platformio device monitor
+
+# Browser öffnen mit angezeigter IP
+# Diagramme sollten sofort aktualisieren
+```
+
+**Erwartetes Verhalten:**
+- Charts zeigen realistische Random-Walk-Werte
+- Controller reagiert auf simulierte Schwellwertüberschreitungen
+- Serial Monitor zeigt Mess-Zyklen und Aktionen
+
+### 2. Hardware-Integration
+
+```cpp
+// controller.cpp
+#define SIMULATE_SENSORS 0  // Ändern
+static constexpr uint8_t SPEEDUP = 1;  // Real-time für echte Hardware
+```
+
+### 3. Performance-Check
+
+Aktueller RAM/Flash-Verbrauch:
+- **RAM**: 16.8% (88 KB / 524 KB)
+  - Ring-Buffers: 3 × 200 × 4 Bytes = 2.4 KB
+  - Stack/Heap: ~85 KB
+- **Flash**: 40.5% (319 KB / 786 KB)
 
 ## 📝 Lizenz
 
@@ -205,6 +472,33 @@ Endpoints in `web_server.cpp` erweitern und Handler implementieren.
 
 ## 🐛 Bekannte Einschränkungen
 
-- WiFi-Retry verwendet blocking `delay()` (2s pro Retry)
-- Ring-Buffer ist aktuell auf 10 uint16-Werte beschränkt
-- Nur ein Web-Client gleichzeitig wird unterstützt
+### Controller
+- ✅ Vollständig non-blocking implementiert
+- ✅ Keine dynamische Heap-Allokation
+- ⚠️ Nur Simulation - echte Sensoren müssen noch integriert werden
+- ⚠️ IO-Wrapper mit Dummy-Implementierung (nur Serial-Debug)
+
+### WiFi & Netzwerk
+- ⚠️ WiFi-Retry verwendet blocking `delay()` (2s pro Retry)  
+  → Nur während der Initialisierung in `setup()`, nicht in `loop()`
+- ⚠️ Nur ein Web-Client gleichzeitig wird unterstützt
+- ⚠️ Keine HTTPS-Unterstützung
+
+### Datenspeicherung
+- ✅ Ring-Buffer mit 10 uint16-Werten für persistente Daten
+- ℹ️ Sensor-Daten (200 Samples) werden **nicht** persistent gespeichert (RAM-only)
+- ℹ️ Nach Neustart startet Ring-Buffer bei 0 (vorgesehen)
+
+### Web-UI
+- ⚠️ Chart.js wird von CDN geladen (benötigt Internetverbindung)
+- ⚠️ JSON-Serialisierung für 200 Samples kann bei langsamen Clients ~1-2s dauern
+- ℹ️ Keine Authentifizierung/Autorisierung
+
+## 🚀 Roadmap
+
+- [ ] Integration echter Sensoren (RH, Temp, CO2)
+- [ ] Hardware-Pins für Outputs konfigurieren
+- [ ] Optional: Datenlogging auf SD-Karte
+- [ ] Optional: MQTT für externe Monitoring-Systeme
+- [ ] Optional: PID-Controller für präzisere Regelung
+- [ ] Optional: Web-UI ohne CDN (lokale Chart.js-Kopie)
