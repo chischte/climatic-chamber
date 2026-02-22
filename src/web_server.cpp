@@ -70,14 +70,20 @@ static void serveClimateUI(WiFiClient &client) {
   client.print(F(".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:15px;max-width:900px}"));
   client.print(F(".box{background:#fff;padding:15px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1)}"));
   client.print(F("h1{font-size:18px;margin:0 0 10px;color:#333;border-bottom:2px solid #2196F3;padding-bottom:8px}"));
-  client.print(F(".sp{font:22px monospace;font-weight:bold;padding:8px;background:#fff3e0;border-radius:4px;display:inline-block;margin:8px 0}"));
+  client.print(F(".sp-row{display:flex;align-items:center;justify-content:space-between;margin:8px 0}"));
+  client.print(F(".sp{font:22px monospace;font-weight:bold;padding:8px;background:#fff3e0;border-radius:4px;display:inline-block}"));
   client.print(F(".co2-sp{color:#d32f2f}.rh-sp{color:#1976d2}.temp-sp{color:#388e3c}"));
-  client.print(F(".btn{padding:8px 16px;font-size:16px;margin:3px;border:none;border-radius:4px;cursor:pointer;color:white}"));
+  client.print(F(".current{font-size:12px;color:#666;margin-top:4px;text-align:center}"));
+  client.print(F(".btn{padding:8px 16px;font-size:16px;border:none;border-radius:4px;cursor:pointer;color:white}"));
   client.print(F(".btn-co2{background:#f44336}.btn-co2:active{background:#d32f2f}"));
   client.print(F(".btn-rh{background:#2196F3}.btn-rh:active{background:#1976D2}"));
   client.print(F(".btn-temp{background:#4CAF50}.btn-temp:active{background:#388E3C}"));
   client.print(F(".chart-box{background:#fff;padding:15px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1);margin-top:15px;max-width:900px}"));
+  client.print(F(".chart-box-status{background:#fff;padding:3px 15px 5px 15px;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.1);margin-top:8px;max-width:900px}"));
+  client.print(F(".chart-box h1{text-align:center}"));
+  client.print(F(".chart-box-status h1{font-size:13px;margin:0 0 2px;padding-bottom:2px;text-align:center}"));
   client.print(F("canvas{height:150px!important}"));
+  client.print(F("canvas.status{height:40px!important}"));
   client.print(F(".val{font:16px monospace;padding:6px;margin:4px 0;background:#f9f9f9;border-left:3px solid #2196F3;padding-left:8px}"));
   client.print(F(".time{font-size:12px;color:#666;margin-top:10px}"));
   client.print(F("</style></head><body>"));
@@ -89,61 +95,86 @@ static void serveClimateUI(WiFiClient &client) {
   
   // CO2 Setpoint box
   client.print(F("<div class='box'><h1>CO2 Setpoint</h1>"));
-  client.print(F("<div class='sp co2-sp' id='sp-co2'>...</div> <small>ppm</small><br>"));
+  client.print(F("<div class='sp-row'>"));
   client.print(F("<button class='btn btn-co2' onclick='adj(\"co2\",-100)'>-100</button>"));
+  client.print(F("<div><div class='sp co2-sp' id='sp-co2'>...</div> <small>ppm</small></div>"));
   client.print(F("<button class='btn btn-co2' onclick='adj(\"co2\",100)'>+100</button>"));
+  client.print(F("</div>"));
+  client.print(F("<div class='current' id='curr-co2'>Current: -- ppm</div>"));
   client.print(F("</div>"));
   
   // RH Setpoint box
   client.print(F("<div class='box'><h1>RH Setpoint</h1>"));
-  client.print(F("<div class='sp rh-sp' id='sp-rh'>...</div> <small>%</small><br>"));
+  client.print(F("<div class='sp-row'>"));
   client.print(F("<button class='btn btn-rh' onclick='adj(\"rh\",-1)'>-1</button>"));
+  client.print(F("<div><div class='sp rh-sp' id='sp-rh'>...</div> <small>%</small></div>"));
   client.print(F("<button class='btn btn-rh' onclick='adj(\"rh\",1)'>+1</button>"));
+  client.print(F("</div>"));
+  client.print(F("<div class='current' id='curr-rh'>Current: --%</div>"));
   client.print(F("</div>"));
   
   // Temp Setpoint box
   client.print(F("<div class='box'><h1>Temp Setpoint</h1>"));
-  client.print(F("<div class='sp temp-sp' id='sp-temp'>...</div> <small>\u00b0C</small><br>"));
+  client.print(F("<div class='sp-row'>"));
   client.print(F("<button class='btn btn-temp' onclick='adj(\"temp\",-1)'>-1</button>"));
+  client.print(F("<div><div class='sp temp-sp' id='sp-temp'>...</div> <small>\u00b0C</small></div>"));
   client.print(F("<button class='btn btn-temp' onclick='adj(\"temp\",1)'>+1</button>"));
+  client.print(F("</div>"));
+  client.print(F("<div class='current' id='curr-temp'>Current: --\u00b0C</div>"));
   client.print(F("</div>"));
   
   client.print(F("</div>")); // end grid
   
-  // Charts
+  // Charts (ordered: CO2, FreshAir, RH, Fogger, Swirler, Temp, Heater)
   client.print(F("<div class='chart-box'><h1>CO2 (ppm)</h1><canvas id='co2Chart'></canvas></div>"));
+  client.print(F("<div class='chart-box-status'><h1>Fresh Air Status</h1><canvas class='status' id='freshairChart'></canvas></div>"));
   client.print(F("<div class='chart-box'><h1>Relative Humidity (%)</h1><canvas id='rhChart'></canvas></div>"));
+  client.print(F("<div class='chart-box-status'><h1>Fogger Status</h1><canvas class='status' id='foggerChart'></canvas></div>"));
+  client.print(F("<div class='chart-box-status'><h1>Swirler Status</h1><canvas class='status' id='swirlerChart'></canvas></div>"));
   client.print(F("<div class='chart-box'><h1>Temperature (°C)</h1><canvas id='tempChart'></canvas></div>"));
-  
-  // Debug box
-  client.print(F("<div class='box' style='margin-top:15px;max-width:900px'><h1>Debug Info</h1>"));
-  client.print(F("<pre id='debug' style='font-size:11px;overflow:auto;max-height:200px;background:#f5f5f5;padding:10px'>Loading...</pre></div>"));
+  client.print(F("<div class='chart-box-status'><h1>Heater Status</h1><canvas class='status' id='heaterChart'></canvas></div>"));
   
   // JavaScript
   client.print(F("<script>"));
-  client.print(F("let co2Chart,rhChart,tempChart,timestamps=[];"));
-  client.print(F("const cfg=(label,color,decimals)=>({type:'line',data:{labels:timestamps,datasets:[{label:label,data:[],borderColor:color,backgroundColor:color+'33',tension:0.3,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>label+': '+(decimals?ctx.parsed.y.toFixed(decimals):ctx.parsed.y)}}},scales:{x:{ticks:{maxRotation:45,minRotation:45}},y:{beginAtZero:false}}}});"));
-  client.print(F("function initCharts(){if(typeof Chart==='undefined'){console.log('Chart.js not loaded yet, retrying...');document.getElementById('debug').innerText='Waiting for Chart.js...';setTimeout(initCharts,100);return;}console.log('Initializing charts...');try{co2Chart=new Chart(document.getElementById('co2Chart'),cfg('CO2','#f44336',0));rhChart=new Chart(document.getElementById('rhChart'),cfg('RH','#2196F3',1));tempChart=new Chart(document.getElementById('tempChart'),cfg('Temp','#4CAF50',1));console.log('Charts initialized');setInterval(u,3000);u();}catch(e){console.error('Chart init error:',e);document.getElementById('debug').innerText='Chart Error: '+e.message;}}")); 
+  client.print(F("let co2Chart,rhChart,tempChart,foggerChart,swirlerChart,freshairChart,heaterChart,timestamps=[];"));
+  client.print(F("const cfg=(label,color,decimals)=>({type:'line',data:{labels:timestamps,datasets:[{label:label,data:[],borderColor:color,backgroundColor:color+'33',tension:0.3,fill:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>label+': '+(decimals?ctx.parsed.y.toFixed(decimals):ctx.parsed.y)}}},scales:{x:{ticks:{maxRotation:45,minRotation:45}},y:{beginAtZero:false,ticks:{callback:function(value){return decimals?value.toFixed(decimals).replace(',','.'):value;}}}}}});"));
+  client.print(F("const cfgMulti=(datasets,decimals)=>({type:'line',data:{labels:timestamps,datasets:datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,position:'top'},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+(decimals?ctx.parsed.y.toFixed(decimals):ctx.parsed.y)}}},scales:{x:{ticks:{maxRotation:45,minRotation:45}},y:{beginAtZero:false,ticks:{callback:function(value){return decimals?value.toFixed(decimals).replace(',','.'):value;}}}}}});"));
+  client.print(F("const cfgBin=(label,color)=>({type:'line',data:{labels:timestamps,datasets:[{label:label,data:[],borderColor:color,backgroundColor:color+'33',tension:0,stepped:true,fill:true}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:0,bottom:0,left:5,right:5}},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>label+': '+(ctx.parsed.y?'ON':'OFF')}}},scales:{x:{display:false},y:{min:0,max:1,ticks:{stepSize:1,callback:v=>v?'ON':'OFF'}}}}});"));
+  client.print(F("function initCharts(){if(typeof Chart==='undefined'){console.log('Chart.js not loaded yet, retrying...');setTimeout(initCharts,100);return;}console.log('Initializing charts...');try{co2Chart=new Chart(document.getElementById('co2Chart'),cfgMulti([{label:'CO2 Main',data:[],borderColor:'#f44336',backgroundColor:'#f4433633',tension:0.3,fill:false},{label:'CO2 2nd',data:[],borderColor:'#e91e63',backgroundColor:'#e91e6333',tension:0.3,fill:false}],0));rhChart=new Chart(document.getElementById('rhChart'),cfgMulti([{label:'RH Main',data:[],borderColor:'#2196F3',backgroundColor:'#2196F333',tension:0.3,fill:false},{label:'RH 2nd',data:[],borderColor:'#64B5F6',backgroundColor:'#64B5F633',tension:0.3,fill:false}],1));tempChart=new Chart(document.getElementById('tempChart'),cfgMulti([{label:'Temp Main',data:[],borderColor:'#4CAF50',backgroundColor:'#4CAF5033',tension:0.3,fill:false},{label:'Temp 2nd',data:[],borderColor:'#66BB6A',backgroundColor:'#66BB6A33',tension:0.3,fill:false},{label:'Temp Outer',data:[],borderColor:'#8BC34A',backgroundColor:'#8BC34A33',tension:0.3,fill:false}],1));foggerChart=new Chart(document.getElementById('foggerChart'),cfgBin('Fogger','#9C27B0'));swirlerChart=new Chart(document.getElementById('swirlerChart'),cfgBin('Swirler','#FF9800'));freshairChart=new Chart(document.getElementById('freshairChart'),cfgBin('FreshAir','#00BCD4'));heaterChart=new Chart(document.getElementById('heaterChart'),cfgBin('Heater','#FF5722'));console.log('Charts initialized');setInterval(u,3000);u();}catch(e){console.error('Chart init error:',e);}}")); 
   client.print(F("window.onload=initCharts;"));
   client.print(F("function u(){fetch('/api/last200').then(r=>r.json()).then(d=>{console.log('Data received:',d);"));
   // Update setpoints
   client.print(F("document.getElementById('sp-co2').innerHTML=d.setpoints.co2;"));
   client.print(F("document.getElementById('sp-rh').innerHTML=d.setpoints.rh.toFixed(1);"));
   client.print(F("document.getElementById('sp-temp').innerHTML=d.setpoints.temp.toFixed(1);"));
+  // Update current values (latest from arrays)
+  client.print(F("let latestCO2=Math.round(d.co2[d.co2.length-1]/50)*50;"));
+  client.print(F("let latestRH=(Math.round(d.rh[d.rh.length-1]*10)/10).toFixed(1);"));
+  client.print(F("let latestTemp=(Math.round(d.temp[d.temp.length-1]*10)/10).toFixed(1);"));
+  client.print(F("document.getElementById('curr-co2').innerHTML='Current: '+latestCO2+' ppm';"));
+  client.print(F("document.getElementById('curr-rh').innerHTML='Current: '+latestRH+'%';"));
+  client.print(F("document.getElementById('curr-temp').innerHTML='Current: '+latestTemp+'\\u00b0C';"));
   // Update time
   client.print(F("let hrs=Math.floor(d.time/3600);let min=Math.floor((d.time%3600)/60);"));
   client.print(F("document.getElementById('time').innerHTML='Uptime: '+(hrs<10?'0':'')+hrs+':'+(min<10?'0':'')+min+' | Last update: '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',hour12:false});"));
   // Generate timestamps and round values
   client.print(F("let now=new Date();timestamps=d.co2.map((_,i)=>{let t=new Date(now.getTime()-(d.co2.length-1-i)*3000);return t.getHours().toString().padStart(2,'0')+':'+t.getMinutes().toString().padStart(2,'0')+':'+t.getSeconds().toString().padStart(2,'0');});"));
   client.print(F("let co2Rounded=d.co2.map(v=>Math.round(v/50)*50);"));
+  client.print(F("let co2_2Rounded=d.co2_2.map(v=>Math.round(v/50)*50);"));
   client.print(F("let rhRounded=d.rh.map(v=>Math.round(v*10)/10);"));
+  client.print(F("let rh_2Rounded=d.rh_2.map(v=>Math.round(v*10)/10);"));
   client.print(F("let tempRounded=d.temp.map(v=>Math.round(v*10)/10);"));
+  client.print(F("let temp_2Rounded=d.temp_2.map(v=>Math.round(v*10)/10);"));
+  client.print(F("let tempOuterRounded=d.temp_outer.map(v=>Math.round(v*10)/10);"));
   // Update charts
-  client.print(F("if(co2Chart){console.log('Updating CO2 chart with',co2Rounded.length,'values');co2Chart.data.labels=timestamps;co2Chart.data.datasets[0].data=co2Rounded;co2Chart.update('none');}else{console.log('CO2 chart not ready');}"));
-  client.print(F("if(rhChart){console.log('Updating RH chart');rhChart.data.labels=timestamps;rhChart.data.datasets[0].data=rhRounded;rhChart.update('none');}"));
-  client.print(F("if(tempChart){console.log('Updating Temp chart');tempChart.data.labels=timestamps;tempChart.data.datasets[0].data=tempRounded;tempChart.update('none');}"));
-  client.print(F("document.getElementById('debug').innerText='CO2[0-4]: '+co2Rounded.slice(0,5).join(', ')+'\\\\nRH[0-4]: '+rhRounded.slice(0,5).join(', ')+'\\\\nTemp[0-4]: '+tempRounded.slice(0,5).join(', ')+'\\\\nTotal: '+d.co2.length+' values';"));
-  client.print(F("}).catch(e=>{console.error('Fetch error:',e);document.getElementById('debug').innerText='Error: '+e.message;});}"));
+  client.print(F("if(co2Chart){console.log('Updating CO2 chart');co2Chart.data.labels=timestamps;co2Chart.data.datasets[0].data=co2Rounded;co2Chart.data.datasets[1].data=co2_2Rounded;co2Chart.update('none');}"));
+  client.print(F("if(rhChart){console.log('Updating RH chart');rhChart.data.labels=timestamps;rhChart.data.datasets[0].data=rhRounded;rhChart.data.datasets[1].data=rh_2Rounded;rhChart.update('none');}"));
+  client.print(F("if(tempChart){console.log('Updating Temp chart');tempChart.data.labels=timestamps;tempChart.data.datasets[0].data=tempRounded;tempChart.data.datasets[1].data=temp_2Rounded;tempChart.data.datasets[2].data=tempOuterRounded;tempChart.update('none');}"));
+  client.print(F("if(foggerChart){foggerChart.data.labels=timestamps;foggerChart.data.datasets[0].data=d.fogger;foggerChart.update('none');}"));
+  client.print(F("if(swirlerChart){swirlerChart.data.labels=timestamps;swirlerChart.data.datasets[0].data=d.swirler;swirlerChart.update('none');}"));
+  client.print(F("if(freshairChart){freshairChart.data.labels=timestamps;freshairChart.data.datasets[0].data=d.freshair;freshairChart.update('none');}"));
+  client.print(F("if(heaterChart){heaterChart.data.labels=timestamps;heaterChart.data.datasets[0].data=d.heater;heaterChart.update('none');}"));
+  client.print(F("}).catch(e=>{console.error('Fetch error:',e);});}"));
   
   client.print(F("function adj(type,delta){"));
   client.print(F("let sp,ep;"));
@@ -165,37 +196,88 @@ static void handleLast200(WiFiClient &client) {
   // Rebuild cache if expired or empty
   if (cachedJsonResponse.length() == 0 || (now - lastCacheUpdate) > CACHE_VALID_MS) {
     Serial.println("API: Rebuilding cache...");
-    static float rhData[100];
-    static float tempData[100];
-    static int co2Data[100];
+    static float rhData[200];
+    static float rh_2Data[200];
+    static float tempData[200];
+    static float temp_2Data[200];
+    static float tempOuterData[200];
+    static int co2Data[200];
+    static int co2_2Data[200];
+    static int foggerData[200];
+    static int swirlerData[200];
+    static int freshairData[200];
+    static int heaterData[200];
     
     controller_get_last200(rhData, tempData, co2Data);
+    controller_get_additional_sensors(co2_2Data, rh_2Data, temp_2Data, tempOuterData);
+    controller_get_outputs(foggerData, swirlerData, freshairData);
+    controller_get_heater(heaterData);
     uint16_t co2_sp = controller_get_co2_setpoint();
     float rh_sp = controller_get_rh_setpoint();
     float temp_sp = controller_get_temp_setpoint();
     
     Serial.print("API: First 5 CO2 values: ");
-    for (int i = 80; i < 85; i++) {
+    for (int i = 0; i < 5; i++) {
       Serial.print(co2Data[i]);
       Serial.print(" ");
     }
     Serial.println();
     
-    // Build JSON once and cache it (20 values)
+    // Build JSON once and cache it (200 values)
     cachedJsonResponse = "{\"co2\":[";
-    for (int i = 80; i < 100; i++) {
-      if (i > 80) cachedJsonResponse += ",";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
       cachedJsonResponse += String(co2Data[i]);
     }
+    cachedJsonResponse += "],\"co2_2\":[";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
+      cachedJsonResponse += String(co2_2Data[i]);
+    }
     cachedJsonResponse += "],\"rh\":[";
-    for (int i = 80; i < 100; i++) {
-      if (i > 80) cachedJsonResponse += ",";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
       cachedJsonResponse += String(rhData[i], 1);
     }
+    cachedJsonResponse += "],\"rh_2\":[";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
+      cachedJsonResponse += String(rh_2Data[i], 1);
+    }
     cachedJsonResponse += "],\"temp\":[";
-    for (int i = 80; i < 100; i++) {
-      if (i > 80) cachedJsonResponse += ",";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
       cachedJsonResponse += String(tempData[i], 1);
+    }
+    cachedJsonResponse += "],\"temp_2\":[";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
+      cachedJsonResponse += String(temp_2Data[i], 1);
+    }
+    cachedJsonResponse += "],\"temp_outer\":[";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
+      cachedJsonResponse += String(tempOuterData[i], 1);
+    }
+    cachedJsonResponse += "],\"fogger\":[";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
+      cachedJsonResponse += String(foggerData[i]);
+    }
+    cachedJsonResponse += "],\"swirler\":[";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
+      cachedJsonResponse += String(swirlerData[i]);
+    }
+    cachedJsonResponse += "],\"freshair\":[";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
+      cachedJsonResponse += String(freshairData[i]);
+    }
+    cachedJsonResponse += "],\"heater\":[";
+    for (int i = 0; i < 200; i++) {
+      if (i > 0) cachedJsonResponse += ",";
+      cachedJsonResponse += String(heaterData[i]);
     }
     cachedJsonResponse += "],\"setpoints\":{\"co2\":";
     cachedJsonResponse += String(co2_sp);

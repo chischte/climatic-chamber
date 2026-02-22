@@ -101,15 +101,24 @@ public:
 class SimSensor {
 private:
   float rh;
+  float rh_2;
   float temp;
+  float temp_2;
+  float temp_outer;
   int co2;
+  int co2_2;
   unsigned long lastUpdate;
   
   // Random walk parameters
   float rhDrift;
+  float rh_2Drift;
   float tempDrift;
+  float temp_2Drift;
+  float tempOuterDrift;
   float co2Drift;
+  float co2_2Drift;
   uint8_t co2PulseCounter;
+  uint8_t co2_2PulseCounter;
 
   float randomWalk(float current, float &drift, float min, float max, float noise, float driftSpeed) {
     // Update drift
@@ -122,8 +131,9 @@ private:
   }
 
 public:
-  SimSensor() : rh(92.0f), temp(25.0f), co2(800), lastUpdate(0), 
-                rhDrift(0), tempDrift(0), co2Drift(0), co2PulseCounter(0) {
+  SimSensor() : rh(92.0f), rh_2(90.5f), temp(25.0f), temp_2(24.0f), temp_outer(22.0f), co2(800), co2_2(820), lastUpdate(0), 
+                rhDrift(0), rh_2Drift(0), tempDrift(0), temp_2Drift(0), tempOuterDrift(0), co2Drift(0), co2_2Drift(0), 
+                co2PulseCounter(0), co2_2PulseCounter(0) {
     randomSeed(analogRead(0));
   }
 
@@ -135,8 +145,17 @@ public:
       // Update RH (85..99.5)
       rh = randomWalk(rh, rhDrift, 85.0f, 99.5f, 0.3f, 0.5f);
       
-      // Update Temp (18..35)
+      // Update RH_2 (85..99.5) - slightly different values
+      rh_2 = randomWalk(rh_2, rh_2Drift, 85.0f, 99.5f, 0.3f, 0.5f);
+      
+      // Update Temp inner (18..35)
       temp = randomWalk(temp, tempDrift, 18.0f, 35.0f, 0.2f, 0.3f);
+      
+      // Update Temp_2 (18..35) - slightly different values
+      temp_2 = randomWalk(temp_2, temp_2Drift, 18.0f, 35.0f, 0.2f, 0.3f);
+      
+      // Update Temp outer (15..32) - slightly cooler range
+      temp_outer = randomWalk(temp_outer, tempOuterDrift, 15.0f, 32.0f, 0.2f, 0.3f);
       
       // Update CO2 with occasional pulses (450..3000)
       co2Drift += (random(-100, 101) / 100.0f);
@@ -153,9 +172,25 @@ public:
       }
       
       co2 = constrain(co2Value, 450, 3000);
+      
+      // Update CO2_2 with slightly different values (offset by 10-30 ppm)
+      co2_2Drift += (random(-100, 101) / 100.0f);
+      co2_2Drift = constrain(co2_2Drift, -10.0f, 10.0f);
+      
+      int co2_2Value = co2_2 + (int)co2_2Drift + random(-20, 21);
+      
+      // Occasional CO2_2 pulse (different timing than CO2)
+      if (co2_2PulseCounter > 0) {
+        co2_2Value += 500;
+        co2_2PulseCounter--;
+      } else if (random(0, 1000) < 3) { // 0.3% chance
+        co2_2PulseCounter = 10;
+      }
+      
+      co2_2 = constrain(co2_2Value, 450, 3000);
     }
     
-    return {co2, rh, temp};
+    return {co2, co2_2, rh, rh_2, temp, temp_2, temp_outer};
   }
 };
 
@@ -170,7 +205,7 @@ static Sensors readSensors3() {
 #else
   // TODO: Read real sensors here
   // For now, return dummy values
-  return {500, 50.0f, 20.0f};
+  return {500, 520, 50.0f, 51.0f, 20.0f, 19.5f, 18.0f};
 #endif
 }
 
@@ -257,22 +292,38 @@ struct ActionContext {
                     rhDownLockoutUntilMs(0), lastVentilationMs(0) {}
 };
 
+// Output state tracking
+static bool g_swirlerState = false;
+static bool g_freshAirState = false;
+static bool g_foggerState = false;
+static bool g_heaterState = false;
+
 // IO Wrapper (adapt to your hardware)
 static void setSwirler(bool on) {
+  g_swirlerState = on;
   // TODO: Implement real hardware control
   Serial.print("Swirler: ");
   Serial.println(on ? "ON" : "OFF");
 }
 
 static void setFreshAir(bool on) {
+  g_freshAirState = on;
   // TODO: Implement real hardware control
   Serial.print("FreshAir: ");
   Serial.println(on ? "ON" : "OFF");
 }
 
 static void setFogger(bool on) {
+  g_foggerState = on;
   // TODO: Implement real hardware control
   Serial.print("Fogger: ");
+  Serial.println(on ? "ON" : "OFF");
+}
+
+static void setHeater(bool on) {
+  g_heaterState = on;
+  // TODO: Implement real hardware control
+  Serial.print("Heater: ");
   Serial.println(on ? "ON" : "OFF");
 }
 
@@ -280,6 +331,7 @@ static void allOutputsOff() {
   setSwirler(false);
   setFreshAir(false);
   setFogger(false);
+  setHeater(false);
 }
 
 // --- Controller (non-preemptive) ---
@@ -606,8 +658,16 @@ static void measurementTick() {
 // --- Ring buffers for plotting ---
 
 static SensorRingBuffer<float, RING_BUFFER_SIZE> g_rhBuffer;
+static SensorRingBuffer<float, RING_BUFFER_SIZE> g_rh_2Buffer;
 static SensorRingBuffer<float, RING_BUFFER_SIZE> g_tempBuffer;
+static SensorRingBuffer<float, RING_BUFFER_SIZE> g_temp_2Buffer;
+static SensorRingBuffer<float, RING_BUFFER_SIZE> g_tempOuterBuffer;
 static SensorRingBuffer<int, RING_BUFFER_SIZE> g_co2Buffer;
+static SensorRingBuffer<int, RING_BUFFER_SIZE> g_co2_2Buffer;
+static SensorRingBuffer<int, RING_BUFFER_SIZE> g_foggerBuffer;
+static SensorRingBuffer<int, RING_BUFFER_SIZE> g_swirlerBuffer;
+static SensorRingBuffer<int, RING_BUFFER_SIZE> g_freshAirBuffer;
+static SensorRingBuffer<int, RING_BUFFER_SIZE> g_heaterBuffer;
 
 // Sample tick: read sensors and add to ring buffers
 static unsigned long g_nextSampleMs = 0;
@@ -617,8 +677,16 @@ static void sampleTick() {
   if (now >= g_nextSampleMs) {
     Sensors s = readSensors3();
     g_rhBuffer.push(s.rh);
+    g_rh_2Buffer.push(s.rh_2);
     g_tempBuffer.push(s.temp);
+    g_temp_2Buffer.push(s.temp_2);
+    g_tempOuterBuffer.push(s.temp_outer);
     g_co2Buffer.push(s.co2);
+    g_co2_2Buffer.push(s.co2_2);
+    g_foggerBuffer.push(g_foggerState ? 1 : 0);
+    g_swirlerBuffer.push(g_swirlerState ? 1 : 0);
+    g_freshAirBuffer.push(g_freshAirState ? 1 : 0);
+    g_heaterBuffer.push(g_heaterState ? 1 : 0);
     
     // Drift-free scheduling
     if (g_nextSampleMs == 0) {
@@ -626,6 +694,35 @@ static void sampleTick() {
     } else {
       g_nextSampleMs += scaled(RT_SAMPLE_PERIOD_MS);
     }
+  }
+}
+
+// Heater control: independent temperature regulation with 1°C hysteresis
+static void heaterTick() {
+  static unsigned long lastCheckMs = 0;
+  unsigned long now = millis();
+  
+  // Check every second (scaled)
+  if (now - lastCheckMs < scaled(1000)) return;
+  lastCheckMs = now;
+  
+  Sensors s = readSensors3();
+  
+  // Hysteresis: turn on if temp < setpoint - 1, turn off if temp >= setpoint
+  if (!g_heaterState && s.temp < (g_temp_setpoint - 1.0f)) {
+    setHeater(true);
+    Serial.print("Heater: ON (temp=");
+    Serial.print(s.temp, 1);
+    Serial.print(", setpoint=");
+    Serial.print(g_temp_setpoint, 1);
+    Serial.println(")!");
+  } else if (g_heaterState && s.temp >= g_temp_setpoint) {
+    setHeater(false);
+    Serial.print("Heater: OFF (temp=");
+    Serial.print(s.temp, 1);
+    Serial.print(", setpoint=");
+    Serial.print(g_temp_setpoint, 1);
+    Serial.println(")!");
   }
 }
 
@@ -663,12 +760,30 @@ void controller_tick() {
   sampleTick();
   measurementTick();
   actionTick();
+  heaterTick();
 }
 
 void controller_get_last200(float *rh_out, float *temp_out, int *co2_out) {
   g_rhBuffer.getAll(rh_out);
   g_tempBuffer.getAll(temp_out);
   g_co2Buffer.getAll(co2_out);
+}
+
+void controller_get_additional_sensors(int *co2_2_out, float *rh_2_out, float *temp_2_out, float *temp_outer_out) {
+  g_co2_2Buffer.getAll(co2_2_out);
+  g_rh_2Buffer.getAll(rh_2_out);
+  g_temp_2Buffer.getAll(temp_2_out);
+  g_tempOuterBuffer.getAll(temp_outer_out);
+}
+
+void controller_get_outputs(int *fogger_out, int *swirler_out, int *freshair_out) {
+  g_foggerBuffer.getAll(fogger_out);
+  g_swirlerBuffer.getAll(swirler_out);
+  g_freshAirBuffer.getAll(freshair_out);
+}
+
+void controller_get_heater(int *heater_out) {
+  g_heaterBuffer.getAll(heater_out);
 }
 
 // CO2 Setpoint management
