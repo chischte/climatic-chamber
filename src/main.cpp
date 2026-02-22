@@ -26,7 +26,6 @@ static constexpr unsigned long WIFI_RETRY_DELAY_MS = 2000UL;
 static constexpr unsigned long WIFI_HEARTBEAT_MS = 30000UL;
 static constexpr unsigned long PERSIST_INTERVAL_MS = 5000UL;
 
-// #region Global Variables & Configuration
 // Networking
 static WiFiServer server(SERVER_PORT);
 
@@ -74,7 +73,6 @@ static void loadDataFromRingBuffer();
 static void saveDataToRingBuffer();
 static void persistDataIfDue();
 static void onIncrement();
-// #endregion Global Variables & Configuration
 
 void setup() {
   Serial.begin(SERIAL_BAUD);
@@ -103,8 +101,7 @@ void loop() {
   web_server_handle(&g_webConfig);
   persistDataIfDue();
 }
-// ==================== END LOOP ==================== 
-// #region Storage Functions
+// ==================== END LOOP ====================
 // ---------- Storage (Ring Buffer with Wear-Leveling on QSPI Flash) ----------
 
 // CRC8 calculation for data integrity
