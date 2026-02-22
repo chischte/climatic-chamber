@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * CLIMATE CHAMBER CONTROLLER IMPLEMENTATION
+ * CLIMATE CHAMBER CONTROLLER - IMPLEMENTATION
  * *****************************************************************************
  */
 
@@ -8,6 +8,14 @@
 #include "storage.h"
 
 // --- Config (SPEEDUP, timing constants) ---
+
+// Import constants from config.h for local use
+static constexpr uint8_t SPEEDUP = Config::SPEEDUP_FACTOR;
+static constexpr uint16_t RING_BUFFER_SIZE = Config::SENSOR_RING_BUFFER_SIZE;
+
+#if !defined(SIMULATE_SENSORS)
+  static constexpr bool SIMULATE_SENSORS = Config::SIMULATE_SENSORS;
+#endif
 
 // Helper: scale milliseconds by SPEEDUP, never return 0 for non-zero input
 static inline unsigned long scaled(unsigned long ms) {
@@ -690,9 +698,9 @@ static void sampleTick() {
     
     // Drift-free scheduling
     if (g_nextSampleMs == 0) {
-      g_nextSampleMs = now + scaled(RT_SAMPLE_PERIOD_MS);
+      g_nextSampleMs = now + scaled(Config::SAMPLE_INTERVAL_MS);
     } else {
-      g_nextSampleMs += scaled(RT_SAMPLE_PERIOD_MS);
+      g_nextSampleMs += scaled(Config::SAMPLE_INTERVAL_MS);
     }
   }
 }
@@ -703,7 +711,7 @@ static void heaterTick() {
   unsigned long now = millis();
   
   // Check every second (scaled)
-  if (now - lastCheckMs < scaled(1000)) return;
+  if (now - lastCheckMs < scaled(Config::HEATER_CHECK_INTERVAL_MS)) return;
   lastCheckMs = now;
   
   Sensors s = readSensors3();
