@@ -8,6 +8,7 @@
  * *****************************************************************************
  */
 
+#include "credentials.h"
 #include "flash_ringbuffer.h"
 #include "web_server.h"
 #include "wifi_manager.h"
@@ -16,8 +17,7 @@
 #include <WiFi.h>
 
 // Configuration
-static constexpr const char *WIFI_SSID = "mueschbache";
-static constexpr const char *WIFI_PASS = "Schogg1chueche";
+// WiFi credentials are defined in credentials.h (copy from credentials.h.template)
 static constexpr uint16_t SERVER_PORT = 80;
 static constexpr unsigned long SERIAL_BAUD = 115200;
 static constexpr int WIFI_MAX_RETRIES = 3;
