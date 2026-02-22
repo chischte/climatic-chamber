@@ -8,12 +8,12 @@
  * *****************************************************************************
  */
 
-#include <Arduino.h>
-#include <Arduino_PortentaMachineControl.h>
-#include <WiFi.h>
 #include "flash_ringbuffer.h"
 #include "web_server.h"
 #include "wifi_manager.h"
+#include <Arduino.h>
+#include <Arduino_PortentaMachineControl.h>
+#include <WiFi.h>
 
 // Configuration
 static constexpr const char *WIFI_SSID = "mueschbache";
@@ -26,6 +26,7 @@ static constexpr unsigned long WIFI_RETRY_DELAY_MS = 2000UL;
 static constexpr unsigned long WIFI_HEARTBEAT_MS = 30000UL;
 static constexpr unsigned long PERSIST_INTERVAL_MS = 5000UL;
 
+// #region Global Variables & Configuration
 // Networking
 static WiFiServer server(SERVER_PORT);
 
@@ -73,8 +74,8 @@ static void loadDataFromRingBuffer();
 static void saveDataToRingBuffer();
 static void persistDataIfDue();
 static void onIncrement();
+// #endregion Global Variables & Configuration
 
-// ---------- Setup / Loop ----------
 void setup() {
   Serial.begin(SERIAL_BAUD);
   unsigned long serialStart = millis();
@@ -95,14 +96,15 @@ void setup() {
   wifi_connect(&g_wifiConfig);
   Serial.println("EXIT SETUP");
 }
+// ==================== END SETUP ====================
 
 void loop() {
   wifi_serial_ticker(&g_wifiConfig, &g_wifiState);
   web_server_handle(&g_webConfig);
   persistDataIfDue();
 }
-// (flash debug helpers removed)
-
+// ==================== END LOOP ==================== 
+// #region Storage Functions
 // ---------- Storage (Ring Buffer with Wear-Leveling on QSPI Flash) ----------
 
 // CRC8 calculation for data integrity
