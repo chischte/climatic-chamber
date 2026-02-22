@@ -1,5 +1,11 @@
 #include "wifi_manager.h"
 
+// Internal state
+static WiFiServer g_server(WIFI_SERVER_PORT);
+static bool g_ipPrinted = false;
+static int g_lastStatus = -1;
+static unsigned long g_lastHeartbeatMs = 0;
+
 static const char *wifiStatusToString(int s) {
   switch (s) {
   case WL_NO_SHIELD:
@@ -52,24 +58,24 @@ static void scanAndReportNetworks(const char *target_ssid) {
   }
 }
 
-void wifi_connect(const WifiConfig *config) {
-  if (config == nullptr) {
+void wifi_init(const char *ssid, const char *pass) {
+  if (ssid == nullptr || pass == nullptr) {
     return;
   }
 
   Serial.print("WiFi: Connecting to ");
-  Serial.println(config->ssid);
+  Serial.println(ssid);
 
   WiFi.disconnect();
   delay(100);
 
-  for (int attempt = 1; attempt <= config->max_retries; ++attempt) {
-    WiFi.begin(config->ssid, config->pass);
+  for (int attempt = 1; attempt <= WIFI_MAX_RETRIES; ++attempt) {
+    WiFi.begin(ssid, pass);
 
     unsigned long start = millis();
     int lastStatus = -1;
 
-    while ((millis() - start) < config->attempt_timeout_ms) {
+    while ((millis() - start) < WIFI_ATTEMPT_TIMEOUT_MS) {
       int s = WiFi.status();
       if (s == WL_CONNECTED) {
         break;
@@ -90,9 +96,7 @@ void wifi_connect(const WifiConfig *config) {
       Serial.println();
       Serial.print("Connected! IP: ");
       Serial.println(WiFi.localIP());
-      if (config->server != nullptr) {
-        config->server->begin();
-      }
+      g_server.begin();
       return;
     }
 
@@ -103,49 +107,49 @@ void wifi_connect(const WifiConfig *config) {
     Serial.print(finalStatus);
     Serial.println(")");
 
-    if (attempt < config->max_retries) {
+    if (attempt < WIFI_MAX_RETRIES) {
       Serial.print("  Retrying in ");
-      Serial.print(config->retry_delay_ms / 1000);
+      Serial.print(WIFI_RETRY_DELAY_MS / 1000);
       Serial.println("s...");
-      delay(config->retry_delay_ms);
+      delay(WIFI_RETRY_DELAY_MS);
     }
   }
 
   // All retries exhausted
   Serial.println("WiFi: All connection attempts failed. Scanning networks...");
-  scanAndReportNetworks(config->ssid);
+  scanAndReportNetworks(ssid);
 }
 
-void wifi_serial_ticker(const WifiConfig *config, WifiState *state) {
-  if (config == nullptr || state == nullptr) {
-    return;
-  }
-
+void wifi_tick() {
   if (!Serial) {
-    state->ip_printed = false;
+    g_ipPrinted = false;
     return;
   }
 
   unsigned long now = millis();
   int status = WiFi.status();
-  if (status != state->last_status) {
-    state->last_status = status;
-    state->last_heartbeat_ms = now;
+  if (status != g_lastStatus) {
+    g_lastStatus = status;
+    g_lastHeartbeatMs = now;
     Serial.print("WiFi: ");
     Serial.println(wifiStatusToString(status));
-  } else if ((now - state->last_heartbeat_ms) >= config->heartbeat_ms) {
-    state->last_heartbeat_ms = now;
+  } else if ((now - g_lastHeartbeatMs) >= WIFI_HEARTBEAT_MS) {
+    g_lastHeartbeatMs = now;
     Serial.print("WiFi: ");
     Serial.println(wifiStatusToString(status));
   }
 
   if (status == WL_CONNECTED) {
-    if (!state->ip_printed) {
+    if (!g_ipPrinted) {
       Serial.print("IP: ");
       Serial.println(WiFi.localIP());
-      state->ip_printed = true;
+      g_ipPrinted = true;
     }
   } else {
-    state->ip_printed = false;
+    g_ipPrinted = false;
   }
+}
+
+WiFiServer* wifi_get_server() {
+  return &g_server;
 }
