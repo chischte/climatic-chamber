@@ -41,6 +41,7 @@ desktop.ini
 # Environment / secrets
 .env
 local.env
+src/credentials.h
 
 # Coverage / test results
 coverage/
