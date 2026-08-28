@@ -123,6 +123,11 @@ static void setFogger(bool on) {
 }
 ```
 
+### OTA-Firmware-Update (TODO)
+
+- OTA-Firmware-Updates analog zur Implementierung im Repository `fastnchip-sensors` umsetzen.
+- Erst beginnen und auf Hardware testen, wenn der zugehörige Portenta wieder verfügbar ist.
+
 ## 📁 Projektstruktur
 
 ```

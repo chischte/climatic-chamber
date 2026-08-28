@@ -16,7 +16,7 @@
 
 #include "config.h"
 #include "controller.h"
-#include "credentials.h"
+#include <wifi-credentials.h>
 #include "storage.h"
 #include "web_server.h"
 #include "wifi_manager.h"
@@ -66,7 +66,7 @@ void setup() {
   
   // Initialize WiFi and connect
   Serial.print(F("WiFi... "));
-  wifi_init(WIFI_SSID, WIFI_PASS);
+  wifi_init(WIFI_SSID, WIFI_PASSWORD);
   Serial.println(F("OK"));
   
   Serial.println(F("=== System Ready ==="));
